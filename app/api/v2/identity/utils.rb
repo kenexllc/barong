@@ -13,7 +13,7 @@ module API::V2
       end
 
       def language
-        params[:lang].nil? ? 'EN' : params[:lang].upcase!
+        params[:lang].to_s.empty? ? 'EN' : params[:lang].upcase
       end
 
       def verify_captcha!(user:, response:, error_statuses: [400, 422])
@@ -68,6 +68,7 @@ module API::V2
 
       def activity_record(options = {})
         params = {
+          category:   'user',
           user_id:    options[:user],
           user_ip:    request.ip,
           user_agent: request.env['HTTP_USER_AGENT'],

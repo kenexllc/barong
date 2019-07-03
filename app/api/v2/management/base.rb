@@ -1,16 +1,6 @@
 module API::V2
   module Management
     class Base < Grape::API
-      logger Rails.logger.dup
-      logger.formatter = GrapeLogging::Formatters::Rails.new
-      use GrapeLogging::Middleware::RequestLogger,
-          logger:    logger,
-          log_level: :info,
-          include:   [GrapeLogging::Loggers::Response.new,
-                      GrapeLogging::Loggers::FilterParameters.new,
-                      GrapeLogging::Loggers::ClientEnv.new,
-                      GrapeLogging::Loggers::RequestHeaders.new]
-
       do_not_route_options!
 
       rescue_from(API::V2::Management::Exceptions::Base) { |e| error!(e.message, e.status, e.headers) }
@@ -26,6 +16,7 @@ module API::V2
       mount API::V2::Management::Labels
       mount API::V2::Management::Users
       mount API::V2::Management::Tools
+      mount API::V2::Management::Otp
 
       add_swagger_documentation base_path: '/api/v2/management',
       info: {

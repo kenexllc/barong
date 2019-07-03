@@ -4,7 +4,12 @@ require 'spec_helper'
 
 describe '/api/v2/auth functionality test' do
   let(:uri) { '/api/v2/identity/sessions' }
-
+  let!(:create_permissions) do
+    create :permission, role: 'admin'
+    create :permission, role: 'member', action: 'ACCEPT', verb: 'all', path: 'not_in_the_rules_path'
+    create :permission, role: 'member', action: 'ACCEPT', verb: 'get', path: '/api/v2/resource/users/me'
+    create :permission, role: 'accountant'
+  end
   let!(:user) { create(:user) }
   let(:params) do
     {
@@ -13,18 +18,20 @@ describe '/api/v2/auth functionality test' do
     }
   end
 
-  let(:do_create_session_request) { post uri, params: params }
+  let(:do_create_session_request) { post uri, params: params, headers: { 'HTTP_USER_AGENT' => 'random-browser' } }
   let(:auth_request) { '/api/v2/auth/not_in_the_rules_path' }
   let(:protected_request) { '/api/v2/resource/users/me' }
 
   describe 'testing workability with session' do
     context 'with valid session' do
       before do
+        Rails.cache.write('permissions', nil)
         do_create_session_request
       end
 
       it 'returns bearer token on valid session' do
         get auth_request
+
         expect(response.status).to eq(200)
         expect(response.headers['Authorization']).not_to be_nil
         expect(response.headers['Authorization']).to include "Bearer"
@@ -40,6 +47,7 @@ describe '/api/v2/auth functionality test' do
         available_types = %w[post get put head delete patch]
         available_types.each do |ping|
           method("#{ping}").call auth_request
+
           expect(response.headers['Authorization']).not_to be_nil
 
           get protected_request, headers: { 'Authorization' => response.headers['Authorization'] }
@@ -74,6 +82,7 @@ describe '/api/v2/auth functionality test' do
 
     context 'testing restrictions' do
       before do
+        Rails.cache.write('permissions', nil)
         do_create_session_request
         expect(response.status).to eq(200)
       end
@@ -111,6 +120,7 @@ describe '/api/v2/auth functionality test' do
     let(:signature) { OpenSSL::HMAC.hexdigest(algorithm, secret, data) }
 
     before do
+      Rails.cache.write('permissions', nil)
       SecretStorage.store_secret(secret, api_key.kid)
       allow(TOTPService).to receive(:validate?)
         .with(test_user.uid, otp_code) { true }
@@ -175,7 +185,7 @@ describe '/api/v2/auth functionality test' do
           'X-Auth-Signature' => signature
         }
         expect(response.status).to eq(401)
-        expect(response.body).to eq("{\"errors\":[\"authz.invalid_session\"]}")
+        expect(response.body).to eq("{\"errors\":[\"authz.apikey_not_active\"]}")
         expect(response.headers['Authorization']).to be_nil
       end
 
@@ -190,7 +200,7 @@ describe '/api/v2/auth functionality test' do
         }
 
         expect(response.status).to eq(401)
-        expect(response.body).to eq("{\"errors\":[\"authz.disabled_2fa\"]}")
+        expect(response.body).to eq("{\"errors\":[\"authz.apikey_not_active\"]}")
         expect(response.headers['Authorization']).to be_nil
       end
     end

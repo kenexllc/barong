@@ -10,9 +10,17 @@ module API::V2
         end
 
         def validate_topic!(topic)
-          unless %w[all session otp password].include?(topic)
+          unless %w[all session otp password account].include?(topic)
             error!({ errors: ['resource.user.wrong_topic'] }, 422)
           end
+        end
+
+        def verify_otp!
+          error!({ errors: ['resource.user.missing_otp_code'] }, 422) if params[:otp_code].nil?
+
+          error!({ errors: ['resource.user.empty_otp_code'] }, 422) if params[:otp_code].empty?
+
+          error!({ errors: ['resource.user.invalid_otp'] }, 422) unless TOTPService.validate?(current_user.uid, params[:otp_code])
         end
       end
 
@@ -20,6 +28,22 @@ module API::V2
         desc 'Returns current user'
         get '/me' do
           present current_user, with: API::V2::Entities::User
+          status(200)
+        end
+
+        desc 'Returns current user'
+        params do
+          requires :password, type: String, allow_blank: false, desc: 'Account password'
+          optional :otp_code, type: String, allow_blank: false, desc: 'Code from Google Authenticator'
+        end
+        delete '/me' do
+          error!({ errors: ['resource.user.invalid_password'] }, 422) unless password_valid?(params[:password])
+
+          verify_otp! if current_user.otp
+
+          current_user.update(state: 'discarded')
+          EventAPI.notify('system.user.account.discarded', current_user.as_json_for_event_api)
+
           status(200)
         end
 
@@ -91,10 +115,11 @@ module API::V2
 
           activity_record(user: current_user.id, action: 'password change', result: 'succeed', topic: 'password')
 
-          params[:lang].nil? ? 'EN' : params[:lang].upcase!
+          language = params[:lang].to_s.empty? ? 'EN' : params[:lang].upcase
+
           EventAPI.notify('system.user.password.change',
                           user: current_user.as_json_for_event_api,
-                          language: params[:lang],
+                          language: language,
                           domain: Barong::App.config.barong_domain)
 
           status 201
